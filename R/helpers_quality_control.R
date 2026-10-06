@@ -44,6 +44,9 @@ checkRun <- function(object, yr, effortType = "min", sig.fig = 3, verbose = TRUE
   uptake <- object$tracking$uptake[,,ac(yr),1]
   uptake[q==0] <- NA
   
+  ## get fleet effort
+  effort <- summary_effort_MixME(object, minyr = yr, maxyr = yr)
+  
   if (effortType == "min") {
     minu = round(apply(uptake, 2, min, na.rm = TRUE),sig.fig)
     maxu = round(apply(uptake, 2, max, na.rm = TRUE),sig.fig)
@@ -64,12 +67,14 @@ checkRun <- function(object, yr, effortType = "min", sig.fig = 3, verbose = TRUE
                             metric   = "minimum undershoot",
                             value    = all(minu == 0),
                             fleet    = if (!all(minu == 0)) colnames(uptake)[minu != 0] else NA,
-                            residual = if (!all(minu == 0)) minu[minu != 0] else NA),
+                            residual = if (!all(minu == 0)) minu[minu != 0] else NA,
+                            effort   = if (!all(minu == 0)) effort$effort[effort$flt %in% names(minu[minu != 0])] else NA),
                  data.frame(year     = yr,
                             metric   = "maximum undershoot",
                             value    = all(maxu >= 0),
                             fleet    = if (!all(maxu >= 0)) colnames(uptake)[maxu < 0] else NA,
-                            residual = if (!all(maxu >= 0)) maxu[maxu < 0] else NA)))
+                            residual = if (!all(maxu >= 0)) maxu[maxu < 0] else NA,
+                            effort   = if (!all(maxu >= 0)) effort$effort[effort$flt %in% names(maxu[maxu < 0])] else NA)))
   }
   if (effortType == "max") {
     maxo = round(apply(uptake, 2, min, na.rm = TRUE),sig.fig)
@@ -92,11 +97,13 @@ checkRun <- function(object, yr, effortType = "min", sig.fig = 3, verbose = TRUE
                             metric   = "maximum overshoot",
                             value    = all(maxo <= 0),
                             fleet    = if(!all(maxo <= 0)) colnames(uptake)[maxo > 0] else NA, 
-                            residual = if(!all(maxo <= 0)) maxo[maxo > 0] else NA),
+                            residual = if(!all(maxo <= 0)) maxo[maxo > 0] else NA,
+                            effort   = if (!all(maxo <= 0)) effort$effort[effort$flt %in% names(maxo[maxo > 0])] else NA),
                  data.frame(year     = yr,
                             metric   = "minimum overshoot",
                             value    = all(mino == 0),
                             fleet    = if (!all(mino == 0)) colnames(uptake)[mino != 0] else NA,
-                            residual = if (!all(mino == 0)) mino[mino != 0] else NA)))
+                            residual = if (!all(mino == 0)) mino[mino != 0] else NA,
+                            effort   = if (!all(mino == 0)) effort$effort[effort$flt %in% names(mino[mino != 0])] else NA)))
   }
 }

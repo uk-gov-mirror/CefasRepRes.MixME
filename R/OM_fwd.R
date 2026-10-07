@@ -98,6 +98,11 @@ fwdMixME <- function(om,                  # FLBiols/FLFisheries
   useEffortAsInit <- args$useEffortAsInit
   useGlobalAsInit <- args$useGlobalAsInit
   
+  if (!is.null(args$extraOptimisation)) {
+    extraOptimisation <- args$extraOptimisation
+  } else 
+    extraOptimisation <- 0
+  
   ## use stock recruitment residuals
   if(!is.null(sr_residuals))
     if(is.list(sr_residuals))
@@ -207,6 +212,66 @@ fwdMixME <- function(om,                  # FLBiols/FLFisheries
                                     useTMB       = useTMB,
                                     correctResid = FALSE,
                                     verbose      = args$verbose)
+      
+      # We may have cases where the choke stock has been correctly identified
+      # but specific fleet quotas are so small that the optimiser lands on
+      # efforts close to zero for those fleets. This has minimal impact on 
+      # stock-level estimates, but can have large impacts on the projected effort 
+      # dynamics for affected fleets.
+      #
+      # The solution is to run extra optimisation for these specific fleets, 
+      # holding the efforts for other fleets at their previously optimised values.
+      
+      ## Subroutine to handle extra optimisation
+      if (extraOptimisation > 0) {
+        
+        ## loop over each replicate
+        for (i in seq_len(ni)) {
+          
+          ## Only proceed if there are optimisation issues in this replicate
+          if (any(effOptimised[[i]]$par < -4)) {
+            
+            ## generate replicate-specific counter
+            nExtra <- extraOptimisation
+            
+            while(nExtra > 0 && any(effOptimised[[i]]$par < -4)) {
+              
+              ## extract starting parameters
+              omList[[i]]$effort <- exp(effOptimised[[i]]$par)
+              omList[[i]]$effort[which(effOptimised[[i]]$par < -4)] <- 2
+              
+              ## fix converged parameters
+              tmp_exceptions <- exceptions
+              tmp_exceptions[,which(effOptimised[[i]]$par > -4)] <- 0
+              
+              useEffortAsInit[] <- TRUE
+              
+              extraOptimised <- effortBaranov(omList = omList[i], adviceType = adviceType, 
+                                              effortType = effortType, exceptions = tmp_exceptions, 
+                                              multiplier = multiplier, maxRetry = maxRetry, 
+                                              par = args$parInit, useEffortAsInit = useEffortAsInit[as.character(yr)], 
+                                              useGlobalAsInit = useGlobalAsInit[as.character(yr)], 
+                                              useTMB = useTMB, correctResid = FALSE, verbose = args$verbose)
+              
+              effOptimised[[i]] <- extraOptimised[[1]]
+              nExtra <- nExtra - 1
+            } ## End while loop over replicate
+            
+            omList[[i]]$effort <- exp(effOptimised[[i]]$par)
+            useEffortAsInit[] <- TRUE
+            
+            extraOptimised <- effortBaranov(omList = omList[i], adviceType = adviceType, 
+                                            effortType = effortType, exceptions = exceptions, 
+                                            multiplier = multiplier, maxRetry = maxRetry, 
+                                            par = args$parInit, useEffortAsInit = useEffortAsInit[as.character(yr)], 
+                                            useGlobalAsInit = useGlobalAsInit[as.character(yr)], 
+                                            useTMB = useTMB, correctResid = FALSE, verbose = args$verbose)
+            
+            effOptimised[[i]] <- extraOptimised[[1]]
+            
+          } ## End if replicate
+        } ## End loop over replicate
+      } ## End if extraOptimisation
       
       ## Extract effort parameters for each fleet
       pars <- sapply(1:ni, function(x) { effOptimised[[x]]$par})

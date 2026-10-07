@@ -169,8 +169,22 @@ stf_fisheries <- function(fisheries,
         #                                            iter = dims(stkflt_ext)$iter)
         # }
         
+        # IMPORTANT! We only want to include zero catchability when effort > 0.
+        # If effort = 0, then we cannot assume that there is any change in
+        # catchability!
+        
         if (method == "yearMeans") {
-          catchq_new <- apply(catch.q(stkflt_ext)["alpha",sel_year], c(1,3), mean)
+          
+          ## extract effort and use to zero-out false zero catchabilities
+          catchq_eff <- fishery@effort[,sel_year]
+          catchq_par <- catch.q(stkflt_ext)["alpha",sel_year]
+          catchq_par[catchq_eff==0] <- NA
+          
+          ## calculate mean catchability
+          catchq_new <- apply(catchq_par, c(1,3), function(x) mean(x, na.rm = TRUE))
+          
+          ## remove NA catchabilities (this is when averaging all zeros)
+          catchq_new[is.na(catchq_new)] <- 0
           
           ## This is a really dumb way of doing this... but can't think of a better
           ## method right now

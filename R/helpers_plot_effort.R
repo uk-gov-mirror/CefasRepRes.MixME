@@ -13,6 +13,10 @@
 #' @param fisheries is a `character` vector of either 'all' or the name of the fisheries to include in the figure.
 #' @param `years` is a `numeric` or `character` vector with the years to include (can be 'all).
 #' @param type is a `character` vector of either `effort` to aggregate across area, or `shares` to plot fleet-area effort shares by fishery.
+#' @param legend is a 'character' vector of 'on', 'off' or 'split' (where métier contains effort information and this has been 
+#' split into an additional column from the metier definition)
+#' @param yrs_avg can be a year or range of years where the forecast parameter is included in the plot (only for 'shares')
+#' @param yrs_for can be a year or range of years over which the forecast is made
 #'
 #' @return a plot with either effort by year for each area or effort shares.
 #'
@@ -25,13 +29,29 @@
 #'
 #' @export
 
-plot_effort <- function(FLFisheries, fisheries = "all", years = "all", type = "effort") {
+plot_effort <- function(FLFisheries, fisheries = "all", years = "all", type = "effort", 
+			legend = "off", yrs_avg = NULL, yrs_for = NULL) {
   require(dplyr); require(ggplot2)
   
   ef   <- do.call(rbind, lapply(FLFisheries, function(x) cbind(fishery = x@name, as.data.frame(x@effort))))
   
   efsh <- ef |> group_by(fishery, year, iter) |> mutate(efsh = data/sum(data))
-  
+ 
+  if(!is.null(yrs_avg)) {
+
+  # Calculate the forecast year assumption
+  efsh_for <- efsh |> group_by(fishery, area, iter) |> filter(year %in% yrs_avg) |>
+	  summarise(efsh = mean(efsh, na.rm = FALSE))
+
+  # Add it to the dataframe
+  yr_ext <- if(is.null(yrs_for)) { yrs_avg[length(yrs_avg)]+1 } else { yrs_for }
+
+  efsh_for <- do.call(rbind, lapply(yr_ext, function(y) efsh_for |> mutate(year = y)))
+
+  # combine the data and forecast
+  efsh <- rbind(cbind(efsh, period = "data"), cbind(efsh_for, period = "forecast"))
+
+  }
   
     ## Filters
   if(all(fisheries != "all") | length(fisheries)>1) {
@@ -46,18 +66,84 @@ plot_effort <- function(FLFisheries, fisheries = "all", years = "all", type = "e
   
   
   if(type == "effort") {
+
+    if(legend == "off") {
     print(ggplot(ef, aes(x = year, y = data)) + geom_area(aes(fill = area)) + 
       facet_wrap(~fishery, scale = "free_y") + theme_bw() + 
         theme(legend.position = "none", axis.text.x = element_text(angle = - 90)) + 
         ylab("effort (000 kw days)"))
+    }
+
+   if(legend == "on") {
+    print(ggplot(ef, aes(x = year, y = data)) + geom_area(aes(fill = area, linetype = area), colour = "black") + 
+      facet_wrap(~fishery, scale = "free_y") + theme_bw() + 
+        theme(axis.text.x = element_text(angle = - 90)) + 
+        ylab("effort (000 kw days)"))
+    }
+
+if(legend == "split") {
+
+     ## These should be defined as inputs to the function to be more flexible
+    library(rlang)
+    ef$metier <- paste(sapply(strsplit(as.character(ef$area), "_"), "[[", 1),
+		       sapply(strsplit(as.character(ef$area),"_"),"[[",2))
+    ef$area   <- vapply(strsplit(as.character(ef$area), "_"), \(z) z[3] %||% NA_character_, character(1))
+
+    print(ggplot(ef, aes(x = year, y = data)) + geom_area(aes(fill = area, linetype = metier), colour = "black") + 
+      facet_wrap(~fishery, scale = "free_y") + theme_bw() + 
+        theme(axis.text.x = element_text(angle = - 90)) + 
+        ylab("effort (000 kw days)") +
+    guides(linetype = guide_legend(override.aes = list(fill = NA)))
+    )
+    }
+
   }
   
   if(type == "shares") {
-    
-    print(ggplot(efsh, aes(x = year, y = efsh)) + geom_line(aes(linetype = area)) + 
+   
+	  if(legend == "off") {
+    p1 <- ggplot(efsh, aes(x = year, y = efsh)) + geom_line(aes(linetype = area)) + 
             facet_wrap(~fishery, scale = "free_y") + theme_bw() + ylab("effort shares (fraction)") + 
             theme(legend.position = "none", axis.text.x = element_text(angle = - 90))
+            
+	  }
+
+if(legend =="on") {
+    p1 <- ggplot(efsh, aes(x = year, y = efsh)) + geom_line(aes(linetype = area)) + 
+            facet_wrap(~fishery, scale = "free_y") + theme_bw() + ylab("effort shares (fraction)") + 
+            theme(axis.text.x = element_text(angle = - 90)
             )
+}
+
+
+if(legend =="split") {
+
+    ## These should be defined as inputs to the function to be more flexible
+    library(rlang)
+    efsh$metier <- paste(sapply(strsplit(as.character(efsh$area), "_"), "[[", 1),
+		       sapply(strsplit(as.character(efsh$area),"_"),"[[",2))
+    efsh$area   <- vapply(strsplit(as.character(efsh$area), "_"), \(z) z[3] %||% NA_character_, character(1))
+
+    p1 <- ggplot(efsh, aes(x = year, y = efsh)) + geom_line(aes(linetype = metier, colour = area)) +
+	    geom_point(aes(shape = metier, colour = area)) +
+            facet_wrap(~fishery, scale = "free_y") + theme_bw() + ylab("effort shares (fraction)") + 
+            theme(axis.text.x = element_text(angle = - 90))            
+}
+
+if(!is.null(yrs_avg)) {
+
+	p1 <- p1 + geom_vline(aes(xintercept = mean(c(yrs_avg[length(yrs_avg)],yr_ext[1]))), 
+				  colour = "grey")# + geom_rect(aes(xmin = yrs_avg[length(yrs_avg)], 
+		#		  ymin = 0, ymax = Inf, xmax = Inf), fill = "grey90", alpha = 0.1)
+	print(p1)
+
+
+} else {
+
+	print(p1)
+
+}
+
   }
   
   
